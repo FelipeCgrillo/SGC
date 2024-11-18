@@ -8,6 +8,8 @@ from reportlab.pdfgen import canvas
 import io
 from PIL import Image
 from reportlab.lib.utils import ImageReader
+import base64
+import textwrap
 
 # Configuración inicial de session_state
 if 'sic_counter' not in st.session_state:
@@ -72,6 +74,14 @@ if 'usuarios' not in st.session_state:
             "nombre_completo": "Luis Morales",
             "cargo": "Director CCM",
             "departamento": "Dirección",
+            "activo": True
+        },
+        "visualizador@ccm.cl": {
+            "password": "123",
+            "rol": "Visualizador",
+            "nombre_completo": "Visualizador Sistema",
+            "cargo": "Visualizador",
+            "departamento": "Administración",
             "activo": True
         }
     }
@@ -317,7 +327,6 @@ def crear_sic():
             st.write(f"N° SIC: {num_sic}")
             fecha = st.date_input("Fecha", value=date.today())
             
-            # Modificar el campo de área para usar un selectbox con opciones limitadas
             area_origen = st.selectbox(
                 "Área",
                 [
@@ -329,10 +338,53 @@ def crear_sic():
             
             destinatario = st.text_input("Destinatario", value="Director del CCM 'Coyhaique'")
             
-            # Declaración de conflicto de interés
-            st.subheader("Declaración de Conflicto de Interés")
+            tipo_compra = st.radio(
+                "Tipo de Compra",
+                ["Convenio Marco", "Licitación Pública", "Compra Ágil", "Trato Directo", "OPI"],
+                horizontal=True,
+                key="tipo_compra",
+                index=None
+            )
+            
+            st.markdown("### Su Declaración de Conflicto de Interés")
+            st.markdown("""
+                <div style="
+                    background-color: #E7F1FF;
+                    border: 1px solid #CCE5FF;
+                    border-radius: 5px;
+                    padding: 15px;
+                    margin: 10px 0;
+                    font-size: 14px;
+                    color: #004085;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                ">
+                    <p style='margin-bottom: 10px; font-size: 15px;'>
+                        <strong>⚠️ ¡IMPORTANTE! Existe conflicto de interés cuando hay:</strong>
+                    </p>
+                    <ul style='list-style-type: none; padding-left: 10px; margin: 0;'>
+                        <li style='margin-bottom: 8px;'>
+                            👥 <strong>Vínculos Familiares:</strong> 
+                            cónyuge, parientes hasta 3er grado consanguíneo, 2do grado afín
+                        </li>
+                        <li style='margin-bottom: 8px;'>
+                            💼 <strong>Vínculos Comerciales:</strong> 
+                            socio >10%, director, gerente, empleado (últimos 24 meses)
+                        </li>
+                        <li style='margin-bottom: 8px;'>
+                            🔍 <strong>Otros Vínculos:</strong> 
+                            participación en bases o afectación a la imparcialidad
+                        </li>
+                    </ul>
+                    <p style='margin-top: 12px; font-size: 13px; color: #DC3545;'>
+                        ⚖️ <strong>Nota:</strong> La no declaración puede resultar en sanciones administrativas, 
+                        disciplinarias y/o penales según Ley N° 19.886 y N° 18.575
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.write("¿Tiene algún conflicto de interés con esta compra?")
             conflicto_creador = st.radio(
-                "¿Tiene algún conflicto de interés con esta compra?",
+                "",  # Label vacío porque ya pusimos la pregunta arriba
                 ["No", "Sí"],
                 horizontal=True,
                 key="conflicto_creador",
@@ -346,15 +398,6 @@ def crear_sic():
                 )
             else:
                 detalle_conflicto = ""
-            
-            # Selección de tipo de compra
-            tipo_compra = st.radio(
-                "Tipo de Compra",
-                ["Convenio Marco", "Licitación Pública", "Compra Ágil"],
-                horizontal=True,
-                key="tipo_compra",
-                index=None
-            )
             
             submitted = st.form_submit_button("Siguiente")
             
@@ -427,11 +470,49 @@ def crear_sic():
                         "RUT del Proveedor",
                         placeholder="XX.XXX.XXX-X"
                     )
+            elif datos_paso1["tipo_compra"] == "Trato Directo":
+                col1, col2 = st.columns(2)
+                with col1:
+                    nombre_proveedor = st.text_input("Nombre del Proveedor")
+                with col2:
+                    rut_proveedor = st.text_input(
+                        "RUT del Proveedor",
+                        placeholder="XX.XXX.XXX-X"
+                    )
+                causal = st.selectbox(
+                    "Causal de Trato Directo",
+                    [
+                        "Proveedor Único",
+                        "Emergencia, Urgencia o Imprevisto",
+                        "Servicios Especializados",
+                        "Prórroga de Contrato",
+                        "Confianza y Seguridad",
+                        "Otros"
+                    ]
+                )
+                if causal == "Otros":
+                    detalle_causal = st.text_area("Especifique la causal")
+            elif datos_paso1["tipo_compra"] == "OPI":
+                col1, col2 = st.columns(2)
+                with col1:
+                    nombre_proveedor = st.text_input("Nombre del Proveedor")
+                    num_opi = st.text_input(
+                        "N° OPI",
+                        placeholder="OPI-XXXX-XXXX"
+                    )
+                with col2:
+                    rut_proveedor = st.text_input(
+                        "RUT del Proveedor",
+                        placeholder="XX.XXX.XXX-X"
+                    )
             else:
                 licitacion_num = None
                 saldo = None
                 nombre_proveedor = None
                 rut_proveedor = None
+                causal = None
+                detalle_causal = None
+                num_opi = None
             
             # Campos comunes para todos los tipos
             descripcion_compra = st.text_area("Se solicita la compra de")
@@ -467,18 +548,18 @@ def crear_sic():
                     if not all([licitacion_num, saldo, nombre_proveedor, rut_proveedor]):
                         st.error("Para Licitación Pública, todos los campos son obligatorios")
                         return
-                
-                # Validaciones comunes
-                if not descripcion_compra:
-                    st.error("La descripción de la compra es obligatoria")
-                    return
-                if not motivo_solicitud:
-                    st.error("El motivo de la solicitud es obligatorio")
-                    return
-                if not valor_estimado:
-                    st.error("El valor estimado es obligatorio")
-                    return
-                
+                elif datos_paso1["tipo_compra"] == "Trato Directo":
+                    if not all([nombre_proveedor, rut_proveedor, saldo, causal]):
+                        st.error("Para Trato Directo, todos los campos son obligatorios")
+                        return
+                    if causal == "Otros" and not detalle_causal:
+                        st.error("Debe especificar la causal del Trato Directo")
+                        return
+                elif datos_paso1["tipo_compra"] == "OPI":
+                    if not all([nombre_proveedor, rut_proveedor, saldo, num_opi]):
+                        st.error("Para OPI, todos los campos son obligatorios")
+                        return
+
                 # Procesar archivos subidos
                 archivos_guardados = []
                 if archivos_subidos:
@@ -500,6 +581,9 @@ def crear_sic():
                     "saldo": saldo if datos_paso1["tipo_compra"] == "Licitación Pública" else None,
                     "nombre_proveedor": nombre_proveedor if datos_paso1["tipo_compra"] == "Licitación Pública" else None,
                     "rut_proveedor": rut_proveedor if datos_paso1["tipo_compra"] == "Licitación Pública" else None,
+                    "causal_trato_directo": causal if datos_paso1["tipo_compra"] == "Trato Directo" else None,
+                    "detalle_causal": detalle_causal if datos_paso1["tipo_compra"] == "Trato Directo" and causal == "Otros" else None,
+                    "num_opi": num_opi if datos_paso1["tipo_compra"] == "OPI" else None,
                     "archivos": archivos_guardados,
                     "estado": "Pendiente",
                     "creador": {
@@ -515,9 +599,8 @@ def crear_sic():
                         "supervisor": {"estado": "Pendiente", "comentario": "", "conflicto_interes": {"tiene_conflicto": "No", "detalle": ""}},
                         "jefe_adm": {"estado": "Pendiente", "comentario": "", "conflicto_interes": {"tiene_conflicto": "No", "detalle": ""}},
                         "director": {"estado": "Pendiente", "comentario": "", "conflicto_interes": {"tiene_conflicto": "No", "detalle": ""}}
-                    }
-                }  # Cierre del diccionario nueva_solicitud
-                
+                    }  # Cierre del diccionario nueva_solicitud
+                }
                 # Guardar solicitud y limpiar estado
                 st.session_state.solicitudes[datos_paso1["num_sic"]] = nueva_solicitud
                 st.session_state.sic_counter += 1
@@ -529,6 +612,43 @@ def crear_sic():
                 time.sleep(1)
                 st.rerun()
 
+def mostrar_cuadro_conflicto_interes():
+    st.markdown("### Su Declaración de Conflicto de Interés")
+    
+    st.markdown("""
+        <div style='background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
+            <p style='font-weight: bold; color: #0d47a1;'>
+                ⚠️ ¡IMPORTANTE! Existe conflicto de interés cuando hay:
+            </p>
+            
+            <p style='margin-left: 20px; color: #1565c0;'>
+                👥 <strong>Vínculos Familiares:</strong> cónyuge, parientes hasta 3er grado consanguíneo, 2do grado afín
+            </p>
+            
+            <p style='margin-left: 20px; color: #1565c0;'>
+                💼 <strong>Vínculos Comerciales:</strong> socio >10%, director, gerente, empleado (últimos 24 meses)
+            </p>
+            
+            <p style='margin-left: 20px; color: #1565c0;'>
+                🔍 <strong>Otros Vínculos:</strong> participación en bases o afectación a la imparcialidad
+            </p>
+            
+            <p style='color: #dc3545; margin-top: 15px;'>
+                ⚖️ <strong>Nota:</strong> La no declaración puede resultar en sanciones administrativas, disciplinarias y/o penales según Ley N° 19.886 y N° 18.575
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    conflicto_creador = st.radio(
+        "¿Tiene algún conflicto de interés con esta compra?",
+        ["No", "Sí"],
+        horizontal=True,
+        key="conflicto_creador",
+        index=None
+    )
+    
+    return conflicto_creador
+
 def revisar_solicitudes():
     st.title("Revisar Solicitudes")
     
@@ -536,20 +656,29 @@ def revisar_solicitudes():
         st.warning("No hay solicitudes pendientes")
         return
 
-    # Filtrar solicitudes según el rol y estado
+    # Mapeo de roles a sus campos correspondientes en las aprobaciones
+    rol_mapping = {
+        "Jefe de Área": "jefe_area",
+        "Jefe de Finanzas": "finanzas",
+        "Supervisor Mercado Público": "supervisor",
+        "Jefe Administrativo": "jefe_adm",
+        "Director": "director"
+    }
+    
+    rol_actual = rol_mapping.get(st.session_state.rol)
+    
+    # Filtrar solicitudes según el rol
     solicitudes_pendientes = {}
     for num_sic, solicitud in st.session_state.solicitudes.items():
+        # Lógica de filtrado específica para cada rol
         if st.session_state.rol == "Jefe de Área":
-            # Solo mostrar solicitudes del área médica
-            if solicitud['area_origen'] == "Área Médica" and solicitud['aprobaciones']['jefe_area']['estado'] == "Pendiente":
+            if (solicitud['area_origen'] == "Área Médica" and 
+                solicitud['aprobaciones']['jefe_area']['estado'] == "Pendiente"):
                 solicitudes_pendientes[num_sic] = solicitud
         
         elif st.session_state.rol == "Jefe de Finanzas":
-            # Mostrar solicitudes que:
-            # 1. No son del área médica (pasan directo)
-            # 2. Son del área médica y ya fueron aprobadas por el jefe de área
-            if (solicitud['area_origen'] != "Área Médica" and solicitud['aprobaciones']['finanzas']['estado'] == "Pendiente") or \
-               (solicitud['area_origen'] == "Área Médica" and solicitud['aprobaciones']['jefe_area']['estado'] == "Aprobado" and \
+            if ((solicitud['area_origen'] != "Área Médica" or 
+                 solicitud['aprobaciones']['jefe_area']['estado'] == "Aprobado") and 
                 solicitud['aprobaciones']['finanzas']['estado'] == "Pendiente"):
                 solicitudes_pendientes[num_sic] = solicitud
         
@@ -572,342 +701,229 @@ def revisar_solicitudes():
         st.info(f"No hay solicitudes pendientes para {st.session_state.rol}")
         return
 
-    # Mostrar solo las solicitudes pendientes filtradas
+    # Mostrar solicitudes pendientes
     for num_sic, solicitud in solicitudes_pendientes.items():
         with st.expander(f"Solicitud {num_sic} - Pendiente de aprobación"):
-            # Mostrar detalles básicos de la solicitud
+            # Información básica de la solicitud
             st.write(f"Fecha: {solicitud['fecha']}")
             st.write(f"Área: {solicitud['area_origen']}")
             st.write(f"Proveedor: {solicitud['nombre_proveedor']}")
-            
-            # Manejar el valor estimado de forma segura
-            valor_estimado = solicitud['valor_estimado']
-            if valor_estimado is not None:
-                st.write(f"Valor Estimado: ${valor_estimado:,}")
-            else:
-                st.write("Valor Estimado: No especificado")
-            
+            st.write(f"Valor Estimado: ${solicitud['valor_estimado']:,}")
             st.write(f"Descripción: {solicitud['descripcion']}")
             st.write(f"Tipo de Compra: {solicitud['tipo_compra']}")
-            
-            # Manejar los campos de licitación de forma segura
-            if solicitud['tipo_compra'] == "Licitación Pública":
-                st.write(f"N° Licitación: {solicitud['licitacion_num'] or 'No especificado'}")
-                saldo = solicitud['saldo']
-                if saldo is not None:
-                    st.write(f"Saldo Disponible: ${saldo:,}")
-                else:
-                    st.write("Saldo Disponible: No especificado")
-            
-            # Mostrar declaraciones de conflicto según el rol
-            st.subheader("Declaraciones de Conflicto de Interés")
-            
-            # Siempre mostrar la declaración del creador
-            st.write(f"Creador: {solicitud['creador']['conflicto_interes']['tiene_conflicto']}")
-            
+
+            # Campos específicos para Jefe de Finanzas (sin línea divisoria aquí)
             if st.session_state.rol == "Jefe de Finanzas":
-                # Mostrar solo declaración del creador y jefe de área
-                if solicitud['aprobaciones']['jefe_area']['estado'] != "Pendiente":
-                    st.write(f"Jefe de Área: {solicitud['aprobaciones']['jefe_area']['conflicto_interes']['tiene_conflicto']}")
-            
-            elif st.session_state.rol == "Supervisor Mercado Público":
-                # Mostrar declaraciones hasta finanzas
-                if solicitud['aprobaciones']['jefe_area']['estado'] != "Pendiente":
-                    st.write(f"Jefe de Área: {solicitud['aprobaciones']['jefe_area']['conflicto_interes']['tiene_conflicto']}")
-                if solicitud['aprobaciones']['finanzas']['estado'] != "Pendiente":
-                    st.write(f"Finanzas: {solicitud['aprobaciones']['finanzas']['conflicto_interes']['tiene_conflicto']}")
-            
-            elif st.session_state.rol == "Jefe Administrativo" and solicitud['aprobaciones']['supervisor']['estado'] == "Aprobado":
-                if solicitud['aprobaciones']['jefe_adm']['estado'] == "Pendiente":
-                    conflicto = st.radio(
-                        "¿Tiene algún conflicto de interés con esta compra?",
-                        ["No", "Sí"],
-                        key=f"conflicto_jefe_adm_{num_sic}",
-                        horizontal=True,
-                        index=None
-                    )
-                    
-                    detalle_conflicto = ""
-                    if conflicto == "Sí":
-                        detalle_conflicto = st.text_area(
-                            "Por favor, detalle el conflicto de interés:",
-                            key=f"detalle_conflicto_jefe_adm_{num_sic}"
-                        )
-                    
-                    estado = st.radio(
-                        "Estado de aprobación",
-                        ["Aprobado", "Rechazado"],
-                        key=f"radio_jefe_adm_{num_sic}",
-                        index=None
-                    )
-                    comentario = st.text_area(
-                        "Comentario",
-                        key=f"comentario_jefe_adm_{num_sic}"
-                    )
-                    if st.button("Guardar decisión", key=f"btn_jefe_adm_{num_sic}"):
-                        if conflicto is None or estado is None:
-                            st.error("Por favor, complete todos los campos antes de guardar")
-                        else:
-                            solicitud['aprobaciones']['jefe_adm']['estado'] = estado
-                            solicitud['aprobaciones']['jefe_adm']['comentario'] = comentario
-                            solicitud['aprobaciones']['jefe_adm']['conflicto_interes'] = {
-                                "tiene_conflicto": conflicto,
-                                "detalle": detalle_conflicto
-                            }
-                            st.success("Decisión guardada")
-                            st.rerun()
-            
-            elif st.session_state.rol == "Director" and solicitud['aprobaciones']['jefe_adm']['estado'] == "Aprobado":
-                if solicitud['aprobaciones']['director']['estado'] == "Pendiente":
-                    conflicto = st.radio(
-                        "¿Tiene algún conflicto de interés con esta compra?",
-                        ["No", "Sí"],
-                        key=f"conflicto_director_{num_sic}",
-                        horizontal=True,
-                        index=None
-                    )
-                    
-                    detalle_conflicto = ""
-                    if conflicto == "Sí":
-                        detalle_conflicto = st.text_area(
-                            "Por favor, detalle el conflicto de interés:",
-                            key=f"detalle_conflicto_director_{num_sic}"
-                        )
-                    
-                    estado = st.radio(
-                        "Estado de aprobación",
-                        ["Aprobado", "Rechazado"],
-                        key=f"radio_director_{num_sic}",
-                        index=None
-                    )
-                    comentario = st.text_area(
-                        "Comentario",
-                        key=f"comentario_director_{num_sic}"
-                    )
-                    if st.button("Guardar decisión", key=f"btn_director_{num_sic}"):
-                        if conflicto is None or estado is None:
-                            st.error("Por favor, complete todos los campos antes de guardar")
-                        else:
-                            solicitud['aprobaciones']['director']['estado'] = estado
-                            solicitud['aprobaciones']['director']['comentario'] = comentario
-                            solicitud['aprobaciones']['director']['conflicto_interes'] = {
-                                "tiene_conflicto": conflicto,
-                                "detalle": detalle_conflicto
-                            }
-                            st.success("Decisión guardada")
-                            st.rerun()
-            
-            # Sección de aprobación según rol
-            if st.session_state.rol == "Jefe de Área":
-                if solicitud['aprobaciones']['jefe_area']['estado'] == "Pendiente":
-                    conflicto = st.radio(
-                        "¿Tiene algún conflicto de interés con esta compra?",
-                        ["No", "Sí"],
-                        key=f"conflicto_jefe_area_{num_sic}",
-                        horizontal=True,
-                        index=None
-                    )
-                    
-                    detalle_conflicto = ""
-                    if conflicto == "Sí":
-                        detalle_conflicto = st.text_area(
-                            "Por favor, detalle el conflicto de interés:",
-                            key=f"detalle_conflicto_jefe_area_{num_sic}"
-                        )
-                    
-                    estado = st.radio(
-                        "Estado de aprobación",
-                        ["Aprobado", "Rechazado"],
-                        key=f"radio_jefe_area_{num_sic}",
-                        index=None
-                    )
-                    comentario = st.text_area(
-                        "Comentario",
-                        key=f"comentario_jefe_area_{num_sic}"
-                    )
-                    if st.button("Guardar decisión", key=f"btn_jefe_area_{num_sic}"):
-                        if conflicto is None or estado is None:
-                            st.error("Por favor, complete todos los campos antes de guardar")
-                        else:
-                            solicitud['aprobaciones']['jefe_area']['estado'] = estado
-                            solicitud['aprobaciones']['jefe_area']['comentario'] = comentario
-                            solicitud['aprobaciones']['jefe_area']['conflicto_interes'] = {
-                                "tiene_conflicto": conflicto,
-                                "detalle": detalle_conflicto
-                            }
-                            st.success("Decisión guardada")
-                            st.rerun()
-            
-            elif st.session_state.rol == "Jefe de Finanzas" and solicitud['aprobaciones']['jefe_area']['estado'] == "Aprobado":
-                if solicitud['aprobaciones']['finanzas']['estado'] == "Pendiente":
-                    conflicto = st.radio(
-                        "¿Tiene algún conflicto de inters con esta compra?",
-                        ["No", "Sí"],
-                        key=f"conflicto_finanzas_{num_sic}",
-                        horizontal=True,
-                        index=None
-                    )
-                    
-                    detalle_conflicto = ""
-                    if conflicto == "Sí":
-                        detalle_conflicto = st.text_area(
-                            "Por favor, detalle el conflicto de interés:",
-                            key=f"detalle_conflicto_finanzas_{num_sic}"
-                        )
-                    
-                    # Sección de Catálogos
-                    st.subheader("Catálogos")
-                    st.write(f"Valor total de la SIC: ${solicitud['valor_estimado']:,}")
-                    
-                    # Inicializar lista de catálogos en session_state si no existe
-                    if f"catalogos_{num_sic}" not in st.session_state:
-                        st.session_state[f"catalogos_{num_sic}"] = [{"numero": "", "monto": 0}]
-                    
-                    # Mostrar catálogos existentes
-                    suma_catalogos = 0
-                    catalogos_a_eliminar = []
-                    
-                    for i, catalogo in enumerate(st.session_state[f"catalogos_{num_sic}"]):
-                        col1, col2, col3 = st.columns([2, 2, 1])
-                        with col1:
-                            catalogo["numero"] = st.text_input(
-                                "Número de Catálogo",
-                                value=catalogo["numero"],
-                                key=f"cat_num_{num_sic}_{i}"
-                            )
-                        with col2:
-                            catalogo["monto"] = st.number_input(
-                                "Monto ($)",
-                                value=catalogo["monto"],
-                                min_value=0,
-                                step=1000,
-                                key=f"cat_monto_{num_sic}_{i}"
-                            )
-                        with col3:
-                            if st.button("Eliminar", key=f"del_cat_{num_sic}_{i}"):
-                                catalogos_a_eliminar.append(i)
-                        
-                        suma_catalogos += catalogo["monto"]
-                    
-                    # Eliminar catálogos marcados
-                    for i in reversed(catalogos_a_eliminar):
-                        st.session_state[f"catalogos_{num_sic}"].pop(i)
-                    
-                    # Botón para agregar nuevo catálogo
-                    if st.button("Agregar Catálogo", key=f"add_cat_{num_sic}"):
-                        st.session_state[f"catalogos_{num_sic}"].append({"numero": "", "monto": 0})
-                        st.rerun()
-                    
-                    # Mostrar suma total y diferencia
-                    st.write(f"Suma total de catálogos: ${suma_catalogos:,}")
-                    diferencia = solicitud['valor_estimado'] - suma_catalogos
-                    if diferencia != 0:
-                        st.warning(f"La suma de catálogos {'excede' if diferencia < 0 else 'no alcanza'} el valor de la SIC por ${abs(diferencia):,}")
-                    else:
-                        st.success("La suma de catálogos coincide con el valor de la SIC")
-                    
-                    # CDP y estado de aprobación
-                    cdp = st.text_input("Número CDP", key=f"cdp_finanzas_{num_sic}")
-                    estado = st.radio(
-                        "Estado de aprobación",
-                        ["Aprobado", "Rechazado"],
-                        key=f"radio_finanzas_{num_sic}",
-                        index=None
-                    )
-                    comentario = st.text_area(
-                        "Comentario",
-                        key=f"comentario_finanzas_{num_sic}"
-                    )
-                    
-                    # Botón de previsualización del CDP
+                st.markdown("---")  # Una sola línea divisoria
+                st.subheader("Información Presupuestaria")
+                
+                # CDP
+                cdp = st.text_input(
+                    "Número de CDP",
+                    key=f"cdp_{num_sic}",
+                    help="Ingrese el número del Certificado de Disponibilidad Presupuestaria"
+                )
+                
+                # Sección de Catálogos
+                st.write("### Distribución Presupuestaria")
+                st.info("Ingrese los catálogos presupuestarios y sus montos correspondientes")
+                
+                # Inicializar variables de session_state
+                if 'catalogos_count' not in st.session_state:
+                    st.session_state.catalogos_count = {}
+                
+                if num_sic not in st.session_state.catalogos_count:
+                    st.session_state.catalogos_count[num_sic] = 1
+                
+                catalogos = []
+                total_catalogos = 0
+                
+                # Mostrar campos de catálogos
+                for i in range(st.session_state.catalogos_count[num_sic]):
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button("Previsualizar CDP", key=f"preview_cdp_{num_sic}"):
-                            # Crear una copia temporal de la solicitud con los datos actuales
-                            solicitud_temp = solicitud.copy()
-                            solicitud_temp['aprobaciones']['finanzas']['cdp'] = cdp
-                            solicitud_temp['aprobaciones']['finanzas']['catalogos'] = st.session_state[f"catalogos_{num_sic}"]
-                            
-                            st.write("### Previsualización del CDP")
-                            cdp_buffer = generar_cdp(solicitud_temp)
-                            st.download_button(
-                                label="Descargar Previsualización",
-                                data=cdp_buffer,
-                                file_name=f"CDP_{solicitud['num_sic']}_preview.pdf",
-                                mime="application/pdf",
-                                key=f"cdp_preview_download_{num_sic}"
-                            )
-                    
+                        numero_catalogo = st.text_input(
+                            "Número de Catálogo",
+                            key=f"catalogo_num_{num_sic}_{i}",
+                            placeholder="Ej: 22-01-001"
+                        )
                     with col2:
-                        if st.button("Guardar decisión", key=f"btn_finanzas_{num_sic}"):
-                            if conflicto is None or estado is None:
-                                st.error("Por favor, complete todos los campos antes de guardar")
-                            elif diferencia != 0:
-                                st.error("La suma de catálogos debe ser igual al valor de la SIC")
-                            else:
-                                solicitud['aprobaciones']['finanzas']['estado'] = estado
-                                solicitud['aprobaciones']['finanzas']['comentario'] = comentario
-                                solicitud['aprobaciones']['finanzas']['cdp'] = cdp
-                                solicitud['aprobaciones']['finanzas']['catalogos'] = st.session_state[f"catalogos_{num_sic}"]
-                                solicitud['aprobaciones']['finanzas']['conflicto_interes'] = {
-                                    "tiene_conflicto": conflicto,
-                                    "detalle": detalle_conflicto
-                                }
-                                st.success("Decisión guardada")
-                                
-                                # Generar CDP solo si la decisión es "Aprobado"
-                                if estado == "Aprobado":
-                                    st.write("### Certificado de Disponibilidad Presupuestaria")
-                                    cdp_buffer = generar_cdp(solicitud)
-                                    st.download_button(
-                                        label="Descargar Certificado de Disponibilidad Presupuestaria",
-                                        data=cdp_buffer,
-                                        file_name=f"CDP_{solicitud['num_sic']}.pdf",
-                                        mime="application/pdf",
-                                        key=f"cdp_download_{num_sic}"
-                                    )
-                                
-                                st.rerun()
-
-            elif st.session_state.rol == "Supervisor Mercado Público" and solicitud['aprobaciones']['finanzas']['estado'] == "Aprobado":
-                if solicitud['aprobaciones']['supervisor']['estado'] == "Pendiente":
-                    conflicto = st.radio(
-                        "¿Tiene algún conflicto de interés con esta compra?",
-                        ["No", "Sí"],
-                        key=f"conflicto_supervisor_{num_sic}",
-                        horizontal=True,
-                        index=None
-                    )
-                    
-                    detalle_conflicto = ""
-                    if conflicto == "Sí":
-                        detalle_conflicto = st.text_area(
-                            "Por favor, detalle el conflicto de interés:",
-                            key=f"detalle_conflicto_supervisor_{num_sic}"
+                        monto_catalogo = st.number_input(
+                            "Monto ($)",
+                            key=f"catalogo_monto_{num_sic}_{i}",
+                            min_value=0,
+                            step=1000
                         )
                     
-                    estado = st.radio(
-                        "Estado de aprobación",
-                        ["Aprobado", "Rechazado"],
-                        key=f"radio_supervisor_{num_sic}",
-                        index=None
-                    )
-                    comentario = st.text_area(
-                        "Comentario",
-                        key=f"comentario_supervisor_{num_sic}"
-                    )
-                    if st.button("Guardar decisión", key=f"btn_supervisor_{num_sic}"):
-                        if conflicto is None or estado is None:
-                            st.error("Por favor, complete todos los campos antes de guardar")
+                    if numero_catalogo or monto_catalogo > 0:
+                        catalogos.append({
+                            "numero": numero_catalogo,
+                            "monto": monto_catalogo
+                        })
+                        total_catalogos += monto_catalogo
+                
+                # Botón para agregar más catálogos
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    if st.button("➕ Agregar Catálogo", key=f"add_catalogo_{num_sic}"):
+                        st.session_state.catalogos_count[num_sic] += 1
+                        st.rerun()
+                
+                # Mostrar diferencia de montos
+                if total_catalogos > 0:
+                    diferencia = solicitud['valor_estimado'] - total_catalogos
+                    
+                    if diferencia != 0:
+                        if diferencia > 0:
+                            st.warning(f"⚠️ Falta asignar ${diferencia:,} para igualar el valor solicitado")
                         else:
-                            solicitud['aprobaciones']['supervisor']['estado'] = estado
-                            solicitud['aprobaciones']['supervisor']['comentario'] = comentario
-                            solicitud['aprobaciones']['supervisor']['conflicto_interes'] = {
+                            st.warning(f"⚠️ El monto asignado excede en ${abs(diferencia):,} al valor solicitado")
+                    else:
+                        st.success("✅ Los montos coinciden correctamente")
+                
+                st.markdown("---")  # Una sola línea divisoria al final
+                
+                # Botón único para descargar CDP
+                if cdp and catalogos and total_catalogos == solicitud['valor_estimado']:
+                    # Crear una copia temporal de la solicitud con los datos actuales
+                    solicitud_temp = solicitud.copy()
+                    solicitud_temp['aprobaciones']['finanzas'].update({
+                        'cdp': cdp,
+                        'catalogos': catalogos
+                    })
+                    
+                    try:
+                        # Generar CDP temporal y convertir a bytes
+                        cdp_buffer = generar_cdp(solicitud_temp)
+                        cdp_bytes = cdp_buffer.getvalue()  # Convertir BytesIO a bytes
+                        
+                        # Botón de descarga
+                        st.download_button(
+                            label="📥 Descargar CDP",
+                            data=cdp_bytes,
+                            file_name=f"CDP_{solicitud['num_sic']}.pdf",
+                            mime="application/pdf",
+                            key=f"download_cdp_{num_sic}"
+                        )
+                    except Exception as e:
+                        st.error(f"Error al generar el CDP: {str(e)}")
+                else:
+                    st.info("Complete el N° CDP y la distribución presupuestaria para generar el CDP")
+            
+            # Mostrar cuadro de conflicto de interés
+            st.markdown("### Su Declaración de Conflicto de Interés")
+            st.markdown("""
+                <div style="
+                    background-color: #E7F1FF;
+                    border: 1px solid #CCE5FF;
+                    border-radius: 5px;
+                    padding: 15px;
+                    margin: 10px 0;
+                    font-size: 14px;
+                    color: #004085;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                ">
+                    <p style='margin-bottom: 10px; font-size: 15px;'>
+                        <strong>⚠️ ¡IMPORTANTE! Existe conflicto de interés cuando hay:</strong>
+                    </p>
+                    <ul style='list-style-type: none; padding-left: 10px; margin: 0;'>
+                        <li style='margin-bottom: 8px;'>
+                            👥 <strong>Vínculos Familiares:</strong> 
+                            cónyuge, parientes hasta 3er grado consanguíneo, 2do grado afín
+                        </li>
+                        <li style='margin-bottom: 8px;'>
+                            💼 <strong>Vínculos Comerciales:</strong> 
+                            socio >10%, director, gerente, empleado (últimos 24 meses)
+                        </li>
+                        <li style='margin-bottom: 8px;'>
+                            🔍 <strong>Otros Vínculos:</strong> 
+                            participación en bases o afectación a la imparcialidad
+                        </li>
+                    </ul>
+                    <p style='margin-top: 12px; font-size: 13px; color: #DC3545;'>
+                        ⚖️ <strong>Nota:</strong> La no declaración puede resultar en sanciones administrativas, 
+                        disciplinarias y/o penales según Ley N° 19.886 y N° 18.575
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Radio button para la selección de conflicto
+            conflicto = st.radio(
+                "¿Tiene algún conflicto de interés con esta compra?",
+                ["No", "Sí"],
+                key=f"conflicto_{rol_actual}_{num_sic}",
+                horizontal=True,
+                index=None
+            )
+            
+            if conflicto == "Sí":
+                detalle_conflicto = st.text_area(
+                    "Detalle del conflicto de interés",
+                    key=f"detalle_conflicto_{rol_actual}_{num_sic}"
+                )
+            else:
+                detalle_conflicto = ""
+            
+            # Radio button para el estado de aprobación
+            estado = st.radio(
+                "Estado de aprobación",
+                ["Aprobado", "Rechazado"],
+                key=f"radio_{rol_actual}_{num_sic}",
+                index=None
+            )
+            
+            # Campo de comentario
+            comentario = st.text_area(
+                "Comentario",
+                key=f"comentario_{rol_actual}_{num_sic}",
+                help="El comentario es obligatorio en caso de rechazo"
+            )
+            
+            # Botón de guardar con validaciones específicas
+            if st.button("Guardar decisión", key=f"btn_{rol_actual}_{num_sic}"):
+                if conflicto is None:
+                    st.error("⚠️ Debe indicar si tiene o no conflicto de interés")
+                elif conflicto == "Sí" and not detalle_conflicto.strip():
+                    st.error("⚠️ Debe detallar el conflicto de interés declarado")
+                elif estado is None:
+                    st.error("⚠️ Debe seleccionar si aprueba o rechaza la solicitud")
+                elif estado == "Rechazado" and not comentario.strip():
+                    st.error("⚠️ Debe ingresar un comentario explicando el motivo del rechazo")
+                elif st.session_state.rol == "Jefe de Finanzas" and estado == "Aprobado":
+                    if not cdp:
+                        st.error("⚠️ Debe ingresar el número de CDP")
+                    elif not catalogos:
+                        st.error("⚠️ Debe ingresar al menos un catálogo presupuestario")
+                    elif total_catalogos != solicitud['valor_estimado']:
+                        st.error("⚠️ El total de los catálogos debe ser igual al valor de la solicitud")
+                    else:
+                        # Guardar con información presupuestaria
+                        solicitud['aprobaciones'][rol_actual].update({
+                            'estado': estado,
+                            'comentario': comentario,
+                            'cdp': cdp,
+                            'catalogos': catalogos,
+                            'conflicto_interes': {
                                 "tiene_conflicto": conflicto,
-                                "detalle": detalle_conflicto
+                                "detalle": detalle_conflicto if conflicto == "Sí" else ""
                             }
-                            st.success("Decisión guardada")
-                            st.rerun()
+                        })
+                        st.success("✅ Decisión guardada exitosamente")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    # Guardar decisión normal
+                    solicitud['aprobaciones'][rol_actual].update({
+                        'estado': estado,
+                        'comentario': comentario,
+                        'conflicto_interes': {
+                            "tiene_conflicto": conflicto,
+                            "detalle": detalle_conflicto if conflicto == "Sí" else ""
+                        }
+                    })
+                    st.success("✅ Decisión guardada exitosamente")
+                    time.sleep(1)
+                    st.rerun()
 
             # Mostrar archivos adjuntos si existen
             if 'archivos' in solicitud and solicitud['archivos']:
@@ -969,7 +985,7 @@ def mostrar_resumen_solicitudes():
         elif any(apr['estado'] == "Rechazado" for apr in solicitud['aprobaciones'].values()):
             estado_actual = "Rechazado"
         
-        # Formatear el valor estimado de manera segura
+        # Formatear el valor estimado
         valor_estimado = solicitud['valor_estimado']
         valor_formateado = f"${valor_estimado:,}" if valor_estimado is not None else "No especificado"
         
@@ -992,9 +1008,6 @@ def mostrar_resumen_solicitudes():
     
     df = pd.DataFrame(datos_resumen)
     
-    # Agregar columna de acción para ver detalles
-    df['Acciones'] = 'Ver Detalles'
-
     # Filtros
     col1, col2 = st.columns(2)
     with col1:
@@ -1037,240 +1050,7 @@ def mostrar_resumen_solicitudes():
     )
 
     if num_sic_seleccionado:
-        solicitud = st.session_state.solicitudes[num_sic_seleccionado]
-        
-        # Mostrar detalles completos en un expander
-        with st.expander(f"Detalles completos de {num_sic_seleccionado}", expanded=True):
-            # Información del Creador
-            st.write("### Información del Creador")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.write("**SOLICITANTE:**")
-                st.write(solicitud['creador']['nombre'])
-            with col2:
-                st.write("**ÁREA:**")
-                st.write(solicitud['area_origen'])
-            with col3:
-                st.write("**TIPO DE COMPRA:**")
-                st.write(solicitud['tipo_compra'])
-            
-            if solicitud['tipo_compra'] == "Licitación Pública":
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write("**N° LICITACIÓN:**")
-                    st.write(solicitud['licitacion_num'])
-                with col2:
-                    st.write("**SALDO:**")
-                    st.write(f"${solicitud['saldo']:,.0f}".replace(",", "."))
-                with col3:
-                    st.write("**VALOR ESTIMADO:**")
-                    st.write(f"${solicitud['valor_estimado']:,.0f}".replace(",", "."))
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("**PROVEEDOR:**")
-                    st.write(solicitud['nombre_proveedor'])
-                with col2:
-                    st.write("**RUT:**")
-                    st.write(solicitud['rut_proveedor'])
-            else:
-                st.write("**VALOR ESTIMADO:**")
-                st.write(f"${solicitud['valor_estimado']:,.0f}".replace(",", "."))
-            
-            st.write("**CONFLICTO:**")
-            st.write(solicitud['creador']['conflicto_interes']['tiene_conflicto'])
-            if solicitud['creador']['conflicto_interes']['tiene_conflicto'] == "Sí":
-                st.write("**DETALLE CONFLICTO:**")
-                st.write(solicitud['creador']['conflicto_interes']['detalle'])
-            
-            st.write("**DESCRIPCIÓN:**")
-            st.write(solicitud['descripcion'])
-            
-            st.write("**MOTIVO:**")
-            st.write(solicitud['motivo'])
-            
-            st.markdown("---")  # Separador
-            
-            # Información de Aprobaciones
-            if solicitud['aprobaciones']['jefe_area']['estado'] != "Pendiente":
-                st.write("### Aprobación Jefe de Área")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write("**ESTADO:**")
-                    st.write(solicitud['aprobaciones']['jefe_area']['estado'])
-                with col2:
-                    st.write("**FECHA:**")
-                    st.write(solicitud['fecha'].strftime('%d-%m-%Y'))
-                with col3:
-                    st.write("**CONFLICTO:**")
-                    st.write(solicitud['aprobaciones']['jefe_area']['conflicto_interes']['tiene_conflicto'])
-                
-                if solicitud['aprobaciones']['jefe_area']['comentario']:
-                    st.write("**COMENTARIO:**")
-                    st.write(solicitud['aprobaciones']['jefe_area']['comentario'])
-                
-                st.markdown("---")
-            
-            # Información de Finanzas si está aprobado
-            if solicitud['aprobaciones']['finanzas']['estado'] == "Aprobado":
-                st.write("### Aprobación Jefe de Finanzas")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write("**ESTADO:**")
-                    st.write(solicitud['aprobaciones']['finanzas']['estado'])
-                with col2:
-                    st.write("**FECHA:**")
-                    st.write(solicitud['fecha'].strftime('%d-%m-%Y'))
-                with col3:
-                    st.write("**CONFLICTO:**")
-                    st.write(solicitud['aprobaciones']['finanzas']['conflicto_interes']['tiene_conflicto'])
-                
-                st.write("**N° CDP:**")
-                st.write(solicitud['aprobaciones']['finanzas']['cdp'])
-                
-                if 'catalogos' in solicitud['aprobaciones']['finanzas']:
-                    st.write("**DISTRIBUCIÓN PRESUPUESTARIA:**")
-                    for catalogo in solicitud['aprobaciones']['finanzas']['catalogos']:
-                        if catalogo['numero'] and catalogo['monto'] > 0:
-                            st.write(f"{catalogo['numero']}: ${catalogo['monto']:,.0f}".replace(",", "."))
-                
-                if solicitud['aprobaciones']['finanzas']['comentario']:
-                    st.write("**COMENTARIO:**")
-                    st.write(solicitud['aprobaciones']['finanzas']['comentario'])
-                
-                st.markdown("---")
-
-            # Información del Supervisor si está aprobado
-            if solicitud['aprobaciones']['supervisor']['estado'] == "Aprobado":
-                st.write("### Aprobación Supervisor Mercado Público")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write("**ESTADO:**")
-                    st.write(solicitud['aprobaciones']['supervisor']['estado'])
-                with col2:
-                    st.write("**FECHA:**")
-                    st.write(solicitud['fecha'].strftime('%d-%m-%Y'))
-                with col3:
-                    st.write("**CONFLICTO:**")
-                    st.write(solicitud['aprobaciones']['supervisor']['conflicto_interes']['tiene_conflicto'])
-                
-                if solicitud['aprobaciones']['supervisor']['comentario']:
-                    st.write("**COMENTARIO:**")
-                    st.write(solicitud['aprobaciones']['supervisor']['comentario'])
-                
-                st.markdown("---")
-            
-            # Información del Jefe Administrativo si está aprobado
-            if solicitud['aprobaciones']['jefe_adm']['estado'] == "Aprobado":
-                st.write("### Aprobación Jefe Administrativo")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write("**ESTADO:**")
-                    st.write(solicitud['aprobaciones']['jefe_adm']['estado'])
-                with col2:
-                    st.write("**FECHA:**")
-                    st.write(solicitud['fecha'].strftime('%d-%m-%Y'))
-                with col3:
-                    st.write("**CONFLICTO:**")
-                    st.write(solicitud['aprobaciones']['jefe_adm']['conflicto_interes']['tiene_conflicto'])
-                
-                if solicitud['aprobaciones']['jefe_adm']['comentario']:
-                    st.write("**COMENTARIO:**")
-                    st.write(solicitud['aprobaciones']['jefe_adm']['comentario'])
-                
-                st.markdown("---")
-            
-            # Información del Director si está aprobado
-            if solicitud['aprobaciones']['director']['estado'] == "Aprobado":
-                st.write("### Aprobación Director")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.write("**ESTADO:**")
-                    st.write(solicitud['aprobaciones']['director']['estado'])
-                with col2:
-                    st.write("**FECHA:**")
-                    st.write(solicitud['fecha'].strftime('%d-%m-%Y'))
-                with col3:
-                    st.write("**CONFLICTO:**")
-                    st.write(solicitud['aprobaciones']['director']['conflicto_interes']['tiene_conflicto'])
-                
-                if solicitud['aprobaciones']['director']['comentario']:
-                    st.write("**COMENTARIO:**")
-                    st.write(solicitud['aprobaciones']['director']['comentario'])
-                
-                st.markdown("---")
-
-            # Sección de documentos al final
-            st.write("### Documentos")
-            col1, col2 = st.columns(2)
-            
-            # CDP si existe
-            with col1:
-                if solicitud['aprobaciones']['finanzas']['estado'] == "Aprobado":
-                    st.download_button(
-                        label="Ver CDP",
-                        data=generar_cdp(solicitud),
-                        file_name=f"CDP_{solicitud['num_sic']}.pdf",
-                        mime="application/pdf",
-                        key=f"ver_cdp_{num_sic_seleccionado}"
-                    )
-            
-            # Resumen SIC si está aprobada por el Director
-            with col2:
-                if solicitud['aprobaciones']['director']['estado'] == "Aprobado":
-                    st.download_button(
-                        label="Ver Resumen SIC con Firmas",
-                        data=generar_resumen_sic(solicitud),
-                        file_name=f"SIC_{solicitud['num_sic']}_Resumen.pdf",
-                        mime="application/pdf",
-                        key=f"ver_resumen_{num_sic_seleccionado}"
-                    )
-
-            # Mostrar documentos adjuntos si existen
-            st.write("### Documentos Adjuntos")
-            if 'archivos' in solicitud and solicitud['archivos']:
-                for i, archivo in enumerate(solicitud['archivos']):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.write(f"📎 {archivo['nombre']} ({archivo['tipo']})")
-                    with col2:
-                        st.download_button(
-                            label="Descargar",
-                            data=archivo['contenido'],
-                            file_name=archivo['nombre'],
-                            mime=archivo['tipo'],
-                            key=f"download_detalle_{num_sic_seleccionado}_{i}"
-                        )
-            else:
-                st.info("No hay documentos adjuntos")
-            
-            st.markdown("---")  # Separador
-            
-            # Sección de documentos del sistema
-            st.write("### Documentos del Sistema")
-            col1, col2 = st.columns(2)
-            
-            # CDP si existe
-            with col1:
-                if solicitud['aprobaciones']['finanzas']['estado'] == "Aprobado":
-                    st.download_button(
-                        label="Ver CDP",
-                        data=generar_cdp(solicitud),
-                        file_name=f"CDP_{solicitud['num_sic']}.pdf",
-                        mime="application/pdf",
-                        key=f"ver_cdp_detalle_{num_sic_seleccionado}"
-                    )
-            
-            # Resumen SIC si está aprobada por el Director
-            with col2:
-                if solicitud['aprobaciones']['director']['estado'] == "Aprobado":
-                    st.download_button(
-                        label="Ver Resumen SIC con Firmas",
-                        data=generar_resumen_sic(solicitud),
-                        file_name=f"SIC_{solicitud['num_sic']}_Resumen.pdf",
-                        mime="application/pdf",
-                        key=f"ver_resumen_detalle_{num_sic_seleccionado}"
-                    )
+        mostrar_detalles_solicitud(num_sic_seleccionado)
 
 def mostrar_dashboard_aprobaciones():
     st.header("Panel de Control de Aprobaciones")
@@ -1278,7 +1058,7 @@ def mostrar_dashboard_aprobaciones():
     # Estadísticas al inicio del dashboard
     st.subheader("Estadísticas Generales")
     
-    # Crear DataFrame para las estadísticas
+    # Crear DataFrame para las estadsticas
     df = pd.DataFrame(st.session_state.solicitudes).T
     
     col1, col2, col3 = st.columns(3)
@@ -1354,7 +1134,7 @@ def mostrar_dashboard_aprobaciones():
                         pendientes_por_nivel["Director"] += 1
                         detalles_pendientes["Director"].append(num_sic)
 
-    # Mostrar métricas en cards
+    # Mostrar mtricas en cards
     col1, col2, col3, col4, col5 = st.columns(5)
     cols = [col1, col2, col3, col4, col5]
     
@@ -1439,7 +1219,7 @@ def hex_to_rgb(color):
     return color_map.get(color, (0, 0, 0))
 
 def validar_email(email):
-    patron = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'  # Acepta cualquier email válido
+    patron = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'  # Acepta cualquier email vlido
     return bool(re.match(patron, email))
 
 def administrar_usuarios():
@@ -1492,7 +1272,8 @@ def administrar_usuarios():
                             "Jefe de Finanzas",
                             "Supervisor Mercado Público",
                             "Jefe Administrativo",
-                            "Director"
+                            "Director",
+                            "Visualizador"
                         ],
                         index=[
                             "Creador SIC",
@@ -1500,14 +1281,14 @@ def administrar_usuarios():
                             "Jefe de Finanzas",
                             "Supervisor Mercado Público",
                             "Jefe Administrativo",
-                            "Director"
+                            "Director",
+                            "Visualizador"
                         ].index(datos_usuario["rol"])
-                    )  # Cerrar paréntesis del selectbox
-                    
+                    )
                     nuevo_nombre = st.text_input("Nombre Completo", value=datos_usuario["nombre_completo"])
                     nuevo_cargo = st.text_input("Cargo", value=datos_usuario["cargo"])
                     nuevo_departamento = st.text_input("Departamento", value=datos_usuario["departamento"])
-                
+                    
                 with col2:
                     st.subheader("Firma del Usuario")
                     if datos_usuario.get("firma"):
@@ -1561,7 +1342,8 @@ def administrar_usuarios():
                     "Jefe de Finanzas",
                     "Supervisor Mercado Público",
                     "Jefe Administrativo",
-                    "Director"
+                    "Director",
+                    "Visualizador"
                 ])
                 nombre_completo = st.text_input("Nombre Completo")
                 cargo = st.text_input("Cargo")
@@ -1569,12 +1351,16 @@ def administrar_usuarios():
             
             with col2:
                 st.subheader("Firma del Usuario")
-                st.write("La firma es obligatoria para activar el usuario")
-                firma_archivo = st.file_uploader(
-                    "Subir firma digitalizada",
-                    type=['jpg', 'jpeg', 'png'],
-                    help="Formatos permitidos: JPG, PNG"
-                )
+                if rol == "Visualizador":
+                    st.info("El rol Visualizador no requiere firma digital")
+                    firma_archivo = None
+                else:
+                    st.write("La firma es obligatoria para activar el usuario")
+                    firma_archivo = st.file_uploader(
+                        "Subir firma digitalizada",
+                        type=['jpg', 'jpeg', 'png'],
+                        help="Formatos permitidos: JPG, PNG"
+                    )
             
             submitted = st.form_submit_button("Crear Usuario")
             
@@ -1587,26 +1373,27 @@ def administrar_usuarios():
                     st.error("Por favor ingrese un email válido")
                 elif email in st.session_state.usuarios:
                     st.error("Este email ya está registrado")
-                elif not firma_archivo:
-                    st.error("La firma es obligatoria")
+                elif not firma_archivo and rol != "Visualizador":
+                    st.error("La firma es obligatoria para roles distintos a Visualizador")
                 else:
-                    firma_info = {
-                        "nombre_archivo": firma_archivo.name,
-                        "tipo": firma_archivo.type,
-                        "contenido": firma_archivo.getvalue()
-                    }
-                    
-                    st.session_state.usuarios[email] = {
+                    nuevo_usuario = {
                         "password": password,
                         "rol": rol,
                         "nombre_completo": nombre_completo,
                         "cargo": cargo,
                         "departamento": departamento,
-                        "activo": True,
-                        "firma": firma_info
+                        "activo": True
                     }
                     
-                    st.success(f"Usuario {email} creado exitosamente")
+                    if firma_archivo and rol != "Visualizador":
+                        nuevo_usuario["firma"] = {
+                            "nombre_archivo": firma_archivo.name,
+                            "tipo": firma_archivo.type,
+                            "contenido": firma_archivo.getvalue()
+                        }
+                    
+                    st.session_state.usuarios[email] = nuevo_usuario
+                    st.success("Usuario creado exitosamente")
                     st.rerun()
 
 def mostrar_formulario():
@@ -1617,7 +1404,14 @@ def mostrar_formulario():
         st.rerun()
 
     # Mostrar pestañas según el rol
-    if st.session_state.rol == "Administrador":
+    if st.session_state.rol == "Visualizador":
+        tab1, tab2 = st.tabs(["Dashboard", "SIC Aprobadas"])
+        
+        with tab1:
+            mostrar_dashboard_aprobaciones()
+        with tab2:
+            mostrar_sic_aprobadas()
+    elif st.session_state.rol == "Administrador":
         tab1, tab2, tab3, tab4 = st.tabs(["Dashboard", "Resumen", "Gestión de Solicitudes", "Administración"])
         
         with tab1:
@@ -1769,333 +1563,411 @@ def agregar_linea_divisoria(c, y, left_margin, right_margin):
 
 def generar_resumen_sic(solicitud):
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=LEGAL)
+    c = canvas.Canvas(buffer, pagesize=letter)
     
-    # Configuración de márgenes más ajustados
-    left_margin = 40  # Reducido para más espacio horizontal
-    right_margin = 572  # Ajustado al ancho
-    top_margin = 980  # Ajustado a la altura
+    # Configuración de márgenes y posiciones
+    left_margin = 72
+    right_margin = 540
+    top_margin = 720
     
-    # Encabezado
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(left_margin, top_margin, "EJÉRCITO DE CHILE")
-    c.drawString(left_margin + 200, top_margin, f"N° SIC: {solicitud['num_sic']}")
-    c.drawString(left_margin, top_margin - 15, "DIVISIÓN DE SALUD")
-    c.drawString(left_margin + 200, top_margin - 15, f"FECHA: {solicitud['fecha'].strftime('%d-%m-%Y')}")
-    c.drawString(left_margin, top_margin - 30, "CENTRO CLÍNICO MILITAR COYHAIQUE")
-    
-    # Título
+    # Título y encabezado
     c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString((right_margin + left_margin)/2, top_margin - 50, "SOLICITUD INTERNA DE COMPRA")
+    c.drawString(left_margin, top_margin, "EJÉRCITO DE CHILE")
+    c.drawString(left_margin, top_margin - 20, "DIVISIÓN DE SALUD")
+    c.drawString(left_margin, top_margin - 40, "CENTRO CLÍNICO MILITAR COYHAIQUE")
     
-    # Configuración de la tabla
-    y = top_margin - 80
-    col_width = (right_margin - left_margin) / 3
-    row_height = 12  # Reducido para más compacto
+    # Número de documento y fecha
+    c.setFont("Helvetica", 10)
+    c.drawString(right_margin - 200, top_margin, f"SIC N° {solicitud['num_sic']}")
+    c.drawString(right_margin - 200, top_margin - 20, f"FECHA: {solicitud['fecha'].strftime('%d-%m-%Y')}")
     
-    def add_row(label1, value1, label2="", value2="", label3="", value3=""):
-        nonlocal y
-        # Primera columna
-        c.setFont("Helvetica-Bold", 8)
-        c.drawString(left_margin, y, label1)
-        c.setFont("Helvetica", 8)
-        c.drawString(left_margin + 80, y, str(value1))
-        
-        # Segunda columna
-        if label2:
-            c.setFont("Helvetica-Bold", 8)
-            c.drawString(left_margin + col_width + 10, y, label2)
-            c.setFont("Helvetica", 8)
-            c.drawString(left_margin + col_width + 90, y, str(value2))
-        
-        # Tercera columna
-        if label3:
-            c.setFont("Helvetica-Bold", 8)
-            c.drawString(left_margin + 2*col_width + 10, y, label3)
-            c.setFont("Helvetica", 8)
-            c.drawString(left_margin + 2*col_width + 90, y, str(value3))
-        
-        y -= row_height
+    # Título del documento
+    c.setFont("Helvetica-Bold", 14)
+    c.drawCentredString((right_margin + left_margin)/2, top_margin - 80, "RESUMEN SOLICITUD INTERNA DE COMPRA")
     
-    # Solo información del creador
-    add_row("SOLICITANTE:", solicitud['creador']['nombre'], 
-            "ÁREA:", solicitud['area_origen'],
-            "TIPO DE COMPRA:", solicitud['tipo_compra'])
+    # Contenido del documento
+    c.setFont("Helvetica", 10)
+    y = top_margin - 120
+    line_height = 15
     
+    # Información básica
+    c.drawString(left_margin, y, f"Área Origen: {solicitud['area_origen']}")
+    y -= line_height * 2
+    
+    c.drawString(left_margin, y, f"Tipo de Compra: {solicitud['tipo_compra']}")
+    y -= line_height * 2
+    
+    # Información específica según tipo de compra
     if solicitud['tipo_compra'] == "Licitación Pública":
-        add_row("N° LICITACIÓN:", solicitud['licitacion_num'],
-                "SALDO:", f"${solicitud['saldo']:,.0f}".replace(",", "."),
-                "VALOR EST.:", f"${solicitud['valor_estimado']:,.0f}".replace(",", "."))
-        add_row("PROVEEDOR:", solicitud['nombre_proveedor'],
-                "RUT:", solicitud['rut_proveedor'])
-    else:
-        add_row("VALOR ESTIMADO:", f"${solicitud['valor_estimado']:,.0f}".replace(",", "."))
+        c.drawString(left_margin, y, f"ID Licitación: {solicitud.get('licitacion_num', 'No especificado')}")
+        y -= line_height
+        c.drawString(left_margin, y, f"Saldo Disponible: ${solicitud.get('saldo', 0):,.0f}")
+        y -= line_height
+    elif solicitud['tipo_compra'] == "Trato Directo":
+        c.drawString(left_margin, y, f"Causal: {solicitud.get('causal_trato_directo', 'No especificado')}")
+        y -= line_height
+        if solicitud.get('detalle_causal'):
+            c.drawString(left_margin, y, f"Detalle Causal: {solicitud['detalle_causal']}")
+            y -= line_height
+    elif solicitud['tipo_compra'] == "OPI":
+        c.drawString(left_margin, y, f"N° OPI: {solicitud.get('num_opi', 'No especificado')}")
+        y -= line_height
     
-    add_row("CONFLICTO:", solicitud['creador']['conflicto_interes']['tiene_conflicto'])
-    if solicitud['creador']['conflicto_interes']['tiene_conflicto'] == "Sí":
-        add_row("DETALLE CONFLICTO:", solicitud['creador']['conflicto_interes']['detalle'])
+    # Información del proveedor
+    y -= line_height
+    c.drawString(left_margin, y, f"Proveedor: {solicitud['nombre_proveedor']}")
+    y -= line_height
+    c.drawString(left_margin, y, f"RUT: {solicitud['rut_proveedor']}")
+    y -= line_height * 2
     
     # Descripción y motivo
-    y -= 10
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(left_margin, y, "DESCRIPCIÓN:")
-    y -= row_height
-    c.setFont("Helvetica", 8)
-    c.drawString(left_margin + 10, y, solicitud['descripcion'])
+    c.drawString(left_margin, y, "Descripción:")
+    y -= line_height
+    # Dividir descripción en líneas si es muy larga
+    descripcion_lines = textwrap.wrap(solicitud['descripcion'], width=80)
+    for line in descripcion_lines:
+        c.drawString(left_margin + 20, y, line)
+        y -= line_height
     
-    y -= 20
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(left_margin, y, "MOTIVO:")
-    y -= row_height
-    c.setFont("Helvetica", 8)
-    c.drawString(left_margin + 10, y, solicitud['motivo'])
+    y -= line_height
+    c.drawString(left_margin, y, "Motivo:")
+    y -= line_height
+    # Dividir motivo en líneas si es muy largo
+    motivo_lines = textwrap.wrap(solicitud['motivo'], width=80)
+    for line in motivo_lines:
+        c.drawString(left_margin + 20, y, line)
+        y -= line_height
     
-    # Firma del creador
-    y -= 40
-    firma_x = right_margin - 100
+    # Valor estimado
+    y -= line_height
+    c.drawString(left_margin, y, f"Valor Estimado: ${solicitud['valor_estimado']:,.0f}")
     
-    # Obtener datos del creador
-    email_creador = next(email for email, data in st.session_state.usuarios.items() 
-                        if data['nombre_completo'] == solicitud['creador']['nombre'])
-    datos_creador = st.session_state.usuarios[email_creador]
+    # Información de CDP si existe
+    if solicitud['aprobaciones']['finanzas']['cdp']:
+        y -= line_height * 2
+        c.drawString(left_margin, y, f"N° CDP: {solicitud['aprobaciones']['finanzas']['cdp']}")
+        
+        # Mostrar catálogos si existen
+        if 'catalogos' in solicitud['aprobaciones']['finanzas']:
+            y -= line_height
+            c.drawString(left_margin, y, "Distribución Presupuestaria:")
+            y -= line_height
+            for catalogo in solicitud['aprobaciones']['finanzas']['catalogos']:
+                c.drawString(left_margin + 20, y, f"{catalogo['numero']}: ${catalogo['monto']:,.0f}")
+                y -= line_height
     
-    # Si hay firma digitalizada
-    if 'firma' in datos_creador:  # Cambiado datos_usuario por datos_creador
-        firma = datos_creador['firma']
-        if firma and firma['tipo'].startswith('image'):
-            img = ImageReader(io.BytesIO(firma['contenido']))
-            firma_width = 120
-            firma_height = 60
-            img_x = firma_x - (firma_width/2)
-            img_y = y - 20
-            c.drawImage(img, img_x, img_y, width=firma_width, height=firma_height)
+    # Cadena de aprobaciones
+    y -= line_height * 2
+    c.drawString(left_margin, y, "Estado de Aprobaciones:")
+    y -= line_height
     
-    # Línea, nombre y cargo alineados a la derecha
-    c.drawCentredString(firma_x, y - 20, "_____________________________")
-    c.drawCentredString(firma_x, y - 40, datos_creador['nombre_completo'])
-    c.drawCentredString(firma_x, y - 55, datos_creador['cargo'])
-    
-    # Agregar línea divisoria después del cargo del creador
-    y = agregar_linea_divisoria(c, y - 75, left_margin, right_margin)
-    
-    # Información del Jefe de Área en tres columnas
-    add_row("JEFE DE ÁREA:", solicitud['aprobaciones']['jefe_area']['estado'], 
-            "FECHA:", solicitud['fecha'].strftime('%d-%m-%Y'),
-            "CONFLICTO:", solicitud['aprobaciones']['jefe_area']['conflicto_interes']['tiene_conflicto'])
-    
-    if solicitud['aprobaciones']['jefe_area']['conflicto_interes']['tiene_conflicto'] == "Sí":
-        add_row("DETALLE CONFLICTO:", solicitud['aprobaciones']['jefe_area']['conflicto_interes']['detalle'])
-    
-    # Comentario en una línea separada
-    if solicitud['aprobaciones']['jefe_area']['comentario']:
-        add_row("COMENTARIO:", solicitud['aprobaciones']['jefe_area']['comentario'])
-    
-    # Firma del Jefe de Área
-    y -= 20  # Reducido de 40 a 20 para disminuir el espacio
-    firma_x = right_margin - 100  # Cambiado de 150 a 100 para mover más a la derecha
-    
-    # Obtener datos del Jefe de Área
-    email_jefe = next(email for email, data in st.session_state.usuarios.items() 
-                     if data['rol'] == "Jefe de Área")
-    datos_jefe = st.session_state.usuarios[email_jefe]
-    
-    # Si hay firma digitalizada
-    if 'firma' in datos_jefe:
-        firma = datos_jefe['firma']
-        if firma and firma['tipo'].startswith('image'):
-            img = ImageReader(io.BytesIO(firma['contenido']))
-            firma_width = 120
-            firma_height = 60
-            img_x = firma_x - (firma_width/2)  # Centrar la imagen respecto al nuevo punto
-            img_y = y - 20
-            c.drawImage(img, img_x, img_y, width=firma_width, height=firma_height)
-    
-    # Línea, nombre y cargo alineados a la derecha
-    c.drawCentredString(firma_x, y - 20, "_____________________________")
-    c.drawCentredString(firma_x, y - 40, datos_jefe['nombre_completo'])
-    c.drawCentredString(firma_x, y - 55, datos_jefe['cargo'])
-    
-    # Agregar línea divisoria después del cargo
-    y = agregar_linea_divisoria(c, y - 75, left_margin, right_margin)  # Ajustado de y - 20 a y - 75
-    
-    # En la sección del Jefe de Finanzas
-    add_row("JEFE DE FINANZAS:", solicitud['aprobaciones']['finanzas']['estado'], 
-            "FECHA:", solicitud['fecha'].strftime('%d-%m-%Y'),
-            "CONFLICTO:", solicitud['aprobaciones']['finanzas']['conflicto_interes']['tiene_conflicto'])
-    
-    # Agregar N° CDP
-    add_row("N° CDP:", solicitud['aprobaciones']['finanzas']['cdp'])
-    
-    # Agregar título de distribución presupuestaria
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(left_margin, y, "DISTRIBUCIÓN PRESUPUESTARIA:")
-    y -= row_height
-    
-    # Mostrar catálogos con formato mejorado
-    if 'catalogos' in solicitud['aprobaciones']['finanzas']:
-        for catalogo in solicitud['aprobaciones']['finanzas']['catalogos']:
-            if catalogo['numero'] and catalogo['monto'] > 0:
-                add_row(catalogo['numero'], "", 
-                       "MONTO:", f"${catalogo['monto']:,.0f}".replace(",", "."))
-    
-    if solicitud['aprobaciones']['finanzas']['conflicto_interes']['tiene_conflicto'] == "Sí":
-        add_row("DETALLE CONFLICTO:", solicitud['aprobaciones']['finanzas']['conflicto_interes']['detalle'])
-    
-    # Comentario en una línea separada
-    if solicitud['aprobaciones']['finanzas']['comentario']:
-        add_row("COMENTARIO:", solicitud['aprobaciones']['finanzas']['comentario'])
-    
-    # Firma del Jefe de Finanzas
-    y -= 20  # Espacio reducido antes de la firma
-    firma_x = right_margin - 100  # Cambiado de 150 a 100 para mover más a la derecha
-    
-    # Obtener datos del Jefe de Finanzas
-    email_finanzas = next(email for email, data in st.session_state.usuarios.items() 
-                         if data['rol'] == "Jefe de Finanzas")
-    datos_finanzas = st.session_state.usuarios[email_finanzas]
-    
-    # Si hay firma digitalizada
-    if 'firma' in datos_finanzas:
-        firma = datos_finanzas['firma']
-        if firma and firma['tipo'].startswith('image'):
-            img = ImageReader(io.BytesIO(firma['contenido']))
-            firma_width = 120
-            firma_height = 60
-            img_x = firma_x - (firma_width/2)  # Centrar la imagen respecto al nuevo punto
-            img_y = y - 20
-            c.drawImage(img, img_x, img_y, width=firma_width, height=firma_height)
-    
-    # Línea, nombre y cargo alineados a la derecha
-    c.drawCentredString(firma_x, y - 20, "_____________________________")
-    c.drawCentredString(firma_x, y - 40, datos_finanzas['nombre_completo'])
-    c.drawCentredString(firma_x, y - 55, datos_finanzas['cargo'])
-    
-    # Agregar línea divisoria después del cargo
-    y = agregar_linea_divisoria(c, y - 75, left_margin, right_margin)  # Ajustado de y - 20 a y - 75
-    
-    # Información del Supervisor en tres columnas
-    add_row("SUPERVISOR:", solicitud['aprobaciones']['supervisor']['estado'], 
-            "FECHA:", solicitud['fecha'].strftime('%d-%m-%Y'),
-            "CONFLICTO:", solicitud['aprobaciones']['supervisor']['conflicto_interes']['tiene_conflicto'])
-    
-    if solicitud['aprobaciones']['supervisor']['conflicto_interes']['tiene_conflicto'] == "Sí":
-        add_row("DETALLE CONFLICTO:", solicitud['aprobaciones']['supervisor']['conflicto_interes']['detalle'])
-    
-    # Comentario en una línea separada
-    if solicitud['aprobaciones']['supervisor']['comentario']:
-        add_row("COMENTARIO:", solicitud['aprobaciones']['supervisor']['comentario'])
-    
-    # Firma del Supervisor
-    y -= 20  # Espacio reducido antes de la firma
-    firma_x = right_margin - 100  # Cambiado de 150 a 100 para mover más a la derecha
-    
-    # Obtener datos del Supervisor
-    email_supervisor = next(email for email, data in st.session_state.usuarios.items() 
-                          if data['rol'] == "Supervisor Mercado Público")
-    datos_supervisor = st.session_state.usuarios[email_supervisor]
-    
-    # Si hay firma digitalizada
-    if 'firma' in datos_supervisor:
-        firma = datos_supervisor['firma']
-        if firma and firma['tipo'].startswith('image'):
-            img = ImageReader(io.BytesIO(firma['contenido']))
-            firma_width = 120
-            firma_height = 60
-            img_x = firma_x - (firma_width/2)  # Centrar la imagen respecto al nuevo punto
-            img_y = y - 20
-            c.drawImage(img, img_x, img_y, width=firma_width, height=firma_height)
-    
-    # Línea, nombre y cargo alineados a la derecha
-    c.drawCentredString(firma_x, y - 20, "_____________________________")
-    c.drawCentredString(firma_x, y - 40, datos_supervisor['nombre_completo'])
-    c.drawCentredString(firma_x, y - 55, datos_supervisor['cargo'])
-    
-    # Agregar línea divisoria después del cargo
-    y = agregar_linea_divisoria(c, y - 75, left_margin, right_margin)  # Ajustado de y - 20 a y - 75
-    
-    # Información del Jefe Administrativo en tres columnas
-    add_row("JEFE ADMINISTRATIVO:", solicitud['aprobaciones']['jefe_adm']['estado'], 
-            "FECHA:", solicitud['fecha'].strftime('%d-%m-%Y'),
-            "CONFLICTO:", solicitud['aprobaciones']['jefe_adm']['conflicto_interes']['tiene_conflicto'])
-    
-    if solicitud['aprobaciones']['jefe_adm']['conflicto_interes']['tiene_conflicto'] == "Sí":
-        add_row("DETALLE CONFLICTO:", solicitud['aprobaciones']['jefe_adm']['conflicto_interes']['detalle'])
-    
-    # Comentario en una línea separada
-    if solicitud['aprobaciones']['jefe_adm']['comentario']:
-        add_row("COMENTARIO:", solicitud['aprobaciones']['jefe_adm']['comentario'])
-    
-    # Firma del Jefe Administrativo
-    y -= 20  # Espacio reducido antes de la firma
-    firma_x = right_margin - 100  # Cambiado de 150 a 100 para mover más a la derecha
-    
-    # Obtener datos del Jefe Administrativo
-    email_jefe_adm = next(email for email, data in st.session_state.usuarios.items() 
-                         if data['rol'] == "Jefe Administrativo")
-    datos_jefe_adm = st.session_state.usuarios[email_jefe_adm]
-    
-    # Si hay firma digitalizada
-    if 'firma' in datos_jefe_adm:
-        firma = datos_jefe_adm['firma']
-        if firma and firma['tipo'].startswith('image'):
-            img = ImageReader(io.BytesIO(firma['contenido']))
-            firma_width = 120
-            firma_height = 60
-            img_x = firma_x - (firma_width/2)  # Centrar la imagen respecto al nuevo punto
-            img_y = y - 20
-            c.drawImage(img, img_x, img_y, width=firma_width, height=firma_height)
-    
-    # Línea, nombre y cargo alineados a la derecha
-    c.drawCentredString(firma_x, y - 20, "_____________________________")
-    c.drawCentredString(firma_x, y - 40, datos_jefe_adm['nombre_completo'])
-    c.drawCentredString(firma_x, y - 55, datos_jefe_adm['cargo'])
-    
-    # Agregar línea divisoria después del cargo
-    y = agregar_linea_divisoria(c, y - 75, left_margin, right_margin)  # Ajustado de y - 20 a y - 75
-    
-    # Información del Director en tres columnas
-    add_row("DIRECTOR:", solicitud['aprobaciones']['director']['estado'], 
-            "FECHA:", solicitud['fecha'].strftime('%d-%m-%Y'),
-            "CONFLICTO:", solicitud['aprobaciones']['director']['conflicto_interes']['tiene_conflicto'])
-    
-    if solicitud['aprobaciones']['director']['conflicto_interes']['tiene_conflicto'] == "Sí":
-        add_row("DETALLE CONFLICTO:", solicitud['aprobaciones']['director']['conflicto_interes']['detalle'])
-    
-    # Comentario en una línea separada
-    if solicitud['aprobaciones']['director']['comentario']:
-        add_row("COMENTARIO:", solicitud['aprobaciones']['director']['comentario'])
-    
-    # Firma del Director
-    y -= 20  # Espacio reducido antes de la firma
-    firma_x = right_margin - 100  # Cambiado de 150 a 100 para mover más a la derecha
-    
-    # Obtener datos del Director
-    email_director = next(email for email, data in st.session_state.usuarios.items() 
-                         if data['rol'] == "Director")
-    datos_director = st.session_state.usuarios[email_director]
-    
-    # Si hay firma digitalizada
-    if 'firma' in datos_director:
-        firma = datos_director['firma']
-        if firma and firma['tipo'].startswith('image'):
-            img = ImageReader(io.BytesIO(firma['contenido']))
-            firma_width = 120
-            firma_height = 60
-            img_x = firma_x - (firma_width/2)  # Centrar la imagen respecto al nuevo punto
-            img_y = y - 20
-            c.drawImage(img, img_x, img_y, width=firma_width, height=firma_height)
-    
-    # Línea, nombre y cargo alineados a la derecha
-    c.drawCentredString(firma_x, y - 20, "_____________________________")
-    c.drawCentredString(firma_x, y - 40, datos_director['nombre_completo'])
-    c.drawCentredString(firma_x, y - 55, datos_director['cargo'])
-    
-    # Agregar línea divisoria después del cargo
-    y = agregar_linea_divisoria(c, y - 75, left_margin, right_margin)  # Ajustado de y - 20 a y - 75
+    for rol, aprobacion in solicitud['aprobaciones'].items():
+        rol_formato = rol.replace('_', ' ').title()
+        c.drawString(left_margin + 20, y, f"{rol_formato}: {aprobacion['estado']}")
+        y -= line_height
+        if aprobacion['comentario']:
+            c.drawString(left_margin + 40, y, f"Comentario: {aprobacion['comentario']}")
+            y -= line_height
     
     c.save()
     buffer.seek(0)
     return buffer
+
+def mostrar_info_conflicto_interes(key_suffix=""):
+    """
+    Muestra información sobre conflicto de interés como tooltip
+    Parámetro key_suffix para generar keys únicas
+    """
+    st.markdown("### Declaración de Conflicto de Interés ❔", help="""
+        **Declaración de Conflicto de Interés**
+
+        Según la Ley de Compras Públicas N° 19.886 y la Ley de Bases N° 18.575, existe conflicto de interés cuando:
+
+        **1. Vínculos Familiares:**
+        • Cónyuge o conviviente civil
+        • Parientes hasta tercer grado de consanguinidad (padres, hijos, hermanos, abuelos, nietos, tíos, sobrinos)
+        • Parientes hasta segundo grado de afinidad (suegros, cuñados)
+
+        **2. Vínculos Comerciales o Laborales:**
+        • Ser socio o accionista con más del 10% del capital
+        • Ser director, administrador, representante o gerente
+        • Tener vínculo laboral actual o dentro de los últimos 24 meses
+
+        **3. Otros Vínculos:**
+        • Participación en la elaboración de bases o términos de referencia
+        • Cualquier circunstancia que afecte la imparcialidad en la toma de decisiones
+
+        La no declaración de conflictos de interés puede resultar en sanciones administrativas, medidas disciplinarias y responsabilidad civil y/o penal según corresponda.
+        """)
+
+def mostrar_detalles_solicitud(num_sic):
+    """
+    Muestra los detalles completos de una solicitud específica
+    """
+    solicitud = st.session_state.solicitudes[num_sic]
+    
+    with st.expander("Detalles de la Solicitud", expanded=True):
+        # Información básica
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write("### Información General")
+            st.write(f"**N° SIC:** {num_sic}")
+            st.write(f"**Fecha:** {solicitud['fecha']}")
+            st.write(f"**Área:** {solicitud['area_origen']}")
+            st.write(f"**Tipo de Compra:** {solicitud['tipo_compra']}")
+        
+        with col2:
+            st.write("### Datos de la Compra")
+            st.write(f"**Valor Estimado:** ${solicitud['valor_estimado']:,}")
+            if solicitud['tipo_compra'] == "Licitación Pública":
+                st.write(f"**N° Licitación:** {solicitud['licitacion_num']}")
+            elif solicitud['tipo_compra'] == "Trato Directo":
+                st.write(f"**Causal:** {solicitud['causal_trato_directo']}")
+                if solicitud.get('detalle_causal'):
+                    st.write(f"**Detalle Causal:** {solicitud['detalle_causal']}")
+            elif solicitud['tipo_compra'] == "OPI":
+                st.write(f"**N° OPI:** {solicitud['num_opi']}")
+            
+            if solicitud.get('saldo'):
+                st.write(f"**Saldo:** ${solicitud['saldo']:,}")
+            st.write(f"**Proveedor:** {solicitud['nombre_proveedor']}")
+            if solicitud.get('rut_proveedor'):
+                st.write(f"**RUT:** {solicitud['rut_proveedor']}")
+        
+        with col3:
+            st.write("### Estado")
+            estado_actual = "Pendiente"
+            if solicitud['aprobaciones']['director']['estado'] == "Aprobado":
+                estado_actual = "Aprobado"
+            elif any(apr['estado'] == "Rechazado" for apr in solicitud['aprobaciones'].values()):
+                estado_actual = "Rechazado"
+            
+            if estado_actual == "Aprobado":
+                st.success(f"Estado: {estado_actual}")
+            elif estado_actual == "Rechazado":
+                st.error(f"Estado: {estado_actual}")
+            else:
+                st.warning(f"Estado: {estado_actual}")
+        
+        # Descripción y motivo
+        st.write("### Descripción y Motivo")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Descripción:**")
+            st.write(solicitud['descripcion'])
+        with col2:
+            st.write("**Motivo:**")
+            st.write(solicitud['motivo'])
+        
+        # Información del creador
+        st.write("### Información del Solicitante")
+        st.write(f"**Nombre:** {solicitud['creador']['nombre']}")
+        st.write(f"**Conflicto de Interés:** {solicitud['creador']['conflicto_interes']['tiene_conflicto']}")
+        if solicitud['creador']['conflicto_interes']['tiene_conflicto'] == "Sí":
+            st.write(f"**Detalle del Conflicto:** {solicitud['creador']['conflicto_interes']['detalle']}")
+        
+        # Estado de aprobaciones
+        st.write("### Estado de Aprobaciones")
+        for rol, aprobacion in solicitud['aprobaciones'].items():
+            if rol == "jefe_area" and solicitud['area_origen'] not in ["Área Mdica"]:
+                continue
+                
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.write(f"**{rol.replace('_', ' ').title()}:**")
+                if aprobacion['estado'] == "Aprobado":
+                    st.success(aprobacion['estado'])
+                elif aprobacion['estado'] == "Rechazado":
+                    st.error(aprobacion['estado'])
+                else:
+                    st.warning(aprobacion['estado'])
+            
+            with col2:
+                if aprobacion['comentario']:
+                    st.write(f"**Comentario:** {aprobacion['comentario']}")
+                if rol == "finanzas" and aprobacion['cdp']:
+                    st.write(f"**N° CDP:** {aprobacion['cdp']}")
+                    if 'catalogos' in aprobacion:
+                        st.write("**Distribución Presupuestaria:**")
+                        for catalogo in aprobacion['catalogos']:
+                            st.write(f"- {catalogo['numero']}: ${catalogo['monto']:,}")
+            
+            with col3:
+                st.write(f"**Conflicto:** {aprobacion['conflicto_interes']['tiene_conflicto']}")
+                if aprobacion['conflicto_interes']['tiene_conflicto'] == "Sí":
+                    st.write(f"**Detalle:** {aprobacion['conflicto_interes']['detalle']}")
+        
+        # Documentos
+        st.write("### Documentos")
+        col1, col2 = st.columns(2)
+        
+        # Columna 1: Archivos adjuntos
+        with col1:
+            st.write("**Archivos Adjuntos:**")
+            if 'archivos' in solicitud and solicitud['archivos']:
+                for i, archivo in enumerate(solicitud['archivos']):
+                    st.download_button(
+                        label=f"📎 {archivo['nombre']}",
+                        data=archivo['contenido'],
+                        file_name=archivo['nombre'],
+                        mime=archivo['tipo'],
+                        key=f"download_detail_{num_sic}_{i}"
+                    )
+            else:
+                st.write("No hay archivos adjuntos")
+        
+        # Columna 2: CDP y Resumen SIC
+        with col2:
+            st.write("**Documentos Generados:**")
+            if solicitud['aprobaciones']['finanzas']['estado'] == "Aprobado":
+                cdp_buffer = generar_cdp(solicitud)
+                st.download_button(
+                    label="📄 Descargar CDP",
+                    data=cdp_buffer,
+                    file_name=f"CDP_{num_sic}.pdf",
+                    mime="application/pdf",
+                    key=f"cdp_download_detail_{num_sic}"
+                )
+            
+            if solicitud['aprobaciones']['director']['estado'] == "Aprobado":
+                st.download_button(
+                    label="📄 Descargar Resumen SIC",
+                    data=generar_resumen_sic(solicitud),
+                    file_name=f"SIC_{num_sic}_Resumen.pdf",
+                    mime="application/pdf",
+                    key=f"resumen_download_detail_{num_sic}"
+                )
+            
+            if solicitud['aprobaciones']['finanzas']['estado'] != "Aprobado" and \
+               solicitud['aprobaciones']['director']['estado'] != "Aprobado":
+                st.write("No hay documentos generados disponibles")
+
+# Agregar nueva función para mostrar solo SIC aprobadas
+def mostrar_sic_aprobadas():
+    st.header("Solicitudes Internas de Compra Aprobadas")
+    
+    # Filtrar solo las SIC completamente aprobadas
+    sic_aprobadas = {
+        num_sic: solicitud 
+        for num_sic, solicitud in st.session_state.solicitudes.items()
+        if all(apr['estado'] == "Aprobado" for apr in solicitud['aprobaciones'].values())
+    }
+    
+    if not sic_aprobadas:
+        st.info("No hay solicitudes completamente aprobadas")
+        return
+
+    # Crear DataFrame para mejor visualización
+    datos_resumen = []
+    for num_sic, solicitud in sic_aprobadas.items():
+        # Formatear el valor estimado
+        valor_estimado = solicitud['valor_estimado']
+        valor_formateado = f"${valor_estimado:,}" if valor_estimado is not None else "No especificado"
+        
+        # Crear fila de datos
+        fila = {
+            'N° SIC': num_sic,
+            'Fecha': solicitud['fecha'],
+            'Área': solicitud['area_origen'],
+            'Proveedor': solicitud['nombre_proveedor'],
+            'Valor ($)': valor_formateado,
+            'Tipo Compra': solicitud['tipo_compra'],
+            'N° CDP': solicitud['aprobaciones']['finanzas']['cdp']
+        }
+        datos_resumen.append(fila)
+    
+    df = pd.DataFrame(datos_resumen)
+    
+    # Filtros
+    col1, col2 = st.columns(2)
+    with col1:
+        area_filtro = st.multiselect(
+            "Filtrar por Área",
+            options=df['Área'].unique(),
+            default=df['Área'].unique()
+        )
+    with col2:
+        fecha_filtro = st.date_input(
+            "Filtrar desde fecha",
+            value=None
+        )
+    
+    # Aplicar filtros
+    if fecha_filtro:
+        df = df[df['Fecha'] >= fecha_filtro]
+    if area_filtro:
+        df = df[df['Área'].isin(area_filtro)]
+
+    # Mostrar DataFrame
+    st.dataframe(df, use_container_width=True)
+
+    # Selector para ver detalles
+    sic_seleccionada = st.selectbox(
+        "Seleccionar SIC para ver detalles",
+        options=df['N° SIC'].tolist(),
+        format_func=lambda x: f"Ver detalles de {x}"
+    )
+
+    if sic_seleccionada:
+        mostrar_detalles_sic_aprobada(sic_seleccionada)
+
+def mostrar_detalles_sic_aprobada(num_sic):
+    solicitud = st.session_state.solicitudes[num_sic]
+    
+    with st.expander(f"Detalles de {num_sic}", expanded=True):
+        # Información básica
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write("### Información General")
+            st.write(f"Fecha: {solicitud['fecha']}")
+            st.write(f"Área: {solicitud['area_origen']}")
+            st.write(f"Tipo de Compra: {solicitud['tipo_compra']}")
+        
+        with col2:
+            st.write("### Proveedor")
+            st.write(f"Nombre: {solicitud['nombre_proveedor']}")
+            st.write(f"RUT: {solicitud['rut_proveedor']}")
+        
+        with col3:
+            st.write("### Valores")
+            st.write(f"Valor Estimado: ${solicitud['valor_estimado']:,}")
+            st.write(f"N° CDP: {solicitud['aprobaciones']['finanzas']['cdp']}")
+        
+        # Descripción y motivo
+        st.write("### Descripción")
+        st.write(solicitud['descripcion'])
+        st.write("### Motivo")
+        st.write(solicitud['motivo'])
+        
+        # Información de aprobaciones
+        st.write("### Cadena de Aprobación")
+        for rol, aprobacion in solicitud['aprobaciones'].items():
+            st.write(f"**{rol.replace('_', ' ').title()}**")
+            st.write(f"Estado: {aprobacion['estado']}")
+            if aprobacion['comentario']:
+                st.write(f"Comentario: {aprobacion['comentario']}")
+        
+        # Botones para descargar documentos
+        col1, col2 = st.columns(2)
+        with col1:
+            # Botón para descargar CDP
+            cdp_buffer = generar_cdp(solicitud)
+            st.download_button(
+                label="📄 Descargar CDP",
+                data=cdp_buffer,
+                file_name=f"CDP_{num_sic}.pdf",
+                mime="application/pdf"
+            )
+        
+        with col2:
+            # Botón para descargar Resumen SIC
+            resumen_buffer = generar_resumen_sic(solicitud)
+            st.download_button(
+                label="📄 Descargar Resumen SIC",
+                data=resumen_buffer,
+                file_name=f"SIC_{num_sic}_Resumen.pdf",
+                mime="application/pdf"
+            )
 
 if __name__ == "__main__":
     main()
