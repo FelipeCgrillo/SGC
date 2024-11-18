@@ -704,13 +704,70 @@ def revisar_solicitudes():
     # Mostrar solicitudes pendientes
     for num_sic, solicitud in solicitudes_pendientes.items():
         with st.expander(f"Solicitud {num_sic} - Pendiente de aprobación"):
-            # Información básica de la solicitud
+            # Información básica siempre visible
             st.write(f"Fecha: {solicitud['fecha']}")
             st.write(f"Área: {solicitud['area_origen']}")
             st.write(f"Proveedor: {solicitud['nombre_proveedor']}")
             st.write(f"Valor Estimado: ${solicitud['valor_estimado']:,}")
             st.write(f"Descripción: {solicitud['descripcion']}")
             st.write(f"Tipo de Compra: {solicitud['tipo_compra']}")
+
+            # Mostrar información específica según el rol y la cadena de aprobación
+            if st.session_state.rol == "Jefe de Finanzas":
+                # Puede ver la aprobación del Jefe de Área si existe
+                if solicitud['area_origen'] == "Área Médica":
+                    st.write("### Aprobación Jefe de Área")
+                    st.write(f"Estado: {solicitud['aprobaciones']['jefe_area']['estado']}")
+                    st.write(f"Comentario: {solicitud['aprobaciones']['jefe_area']['comentario']}")
+                    if 'conflicto_interes' in solicitud['aprobaciones']['jefe_area']:
+                        st.write(f"Conflicto de Interés: {solicitud['aprobaciones']['jefe_area']['conflicto_interes']['tiene_conflicto']}")
+                        if solicitud['aprobaciones']['jefe_area']['conflicto_interes']['tiene_conflicto'] == "Sí":
+                            st.write(f"Detalle: {solicitud['aprobaciones']['jefe_area']['conflicto_interes']['detalle']}")
+
+            elif st.session_state.rol == "Supervisor Mercado Público":
+                # Puede ver aprobaciones anteriores
+                st.write("### Aprobaciones Anteriores")
+                if solicitud['area_origen'] == "Área Médica":
+                    mostrar_aprobacion("Jefe de Área", solicitud['aprobaciones']['jefe_area'])
+                mostrar_aprobacion("Jefe de Finanzas", solicitud['aprobaciones']['finanzas'])
+                # Mostrar información de CDP
+                if solicitud['aprobaciones']['finanzas']['cdp']:
+                    st.write(f"N° CDP: {solicitud['aprobaciones']['finanzas']['cdp']}")
+                    if 'catalogos' in solicitud['aprobaciones']['finanzas']:
+                        st.write("### Distribución Presupuestaria")
+                        for catalogo in solicitud['aprobaciones']['finanzas']['catalogos']:
+                            st.write(f"- {catalogo['numero']}: ${catalogo['monto']:,}")
+
+            elif st.session_state.rol == "Jefe Administrativo":
+                # Puede ver todas las aprobaciones anteriores
+                st.write("### Aprobaciones Anteriores")
+                if solicitud['area_origen'] == "Área Médica":
+                    mostrar_aprobacion("Jefe de Área", solicitud['aprobaciones']['jefe_area'])
+                mostrar_aprobacion("Jefe de Finanzas", solicitud['aprobaciones']['finanzas'])
+                mostrar_aprobacion("Supervisor Mercado Público", solicitud['aprobaciones']['supervisor'])
+                # Mostrar información de CDP
+                if solicitud['aprobaciones']['finanzas']['cdp']:
+                    st.write(f"N° CDP: {solicitud['aprobaciones']['finanzas']['cdp']}")
+                    if 'catalogos' in solicitud['aprobaciones']['finanzas']:
+                        st.write("### Distribución Presupuestaria")
+                        for catalogo in solicitud['aprobaciones']['finanzas']['catalogos']:
+                            st.write(f"- {catalogo['numero']}: ${catalogo['monto']:,}")
+
+            elif st.session_state.rol == "Director":
+                # Puede ver todas las aprobaciones anteriores
+                st.write("### Aprobaciones Anteriores")
+                if solicitud['area_origen'] == "Área Médica":
+                    mostrar_aprobacion("Jefe de Área", solicitud['aprobaciones']['jefe_area'])
+                mostrar_aprobacion("Jefe de Finanzas", solicitud['aprobaciones']['finanzas'])
+                mostrar_aprobacion("Supervisor Mercado Público", solicitud['aprobaciones']['supervisor'])
+                mostrar_aprobacion("Jefe Administrativo", solicitud['aprobaciones']['jefe_adm'])
+                # Mostrar información de CDP
+                if solicitud['aprobaciones']['finanzas']['cdp']:
+                    st.write(f"N° CDP: {solicitud['aprobaciones']['finanzas']['cdp']}")
+                    if 'catalogos' in solicitud['aprobaciones']['finanzas']:
+                        st.write("### Distribución Presupuestaria")
+                        for catalogo in solicitud['aprobaciones']['finanzas']['catalogos']:
+                            st.write(f"- {catalogo['numero']}: ${catalogo['monto']:,}")
 
             # Campos específicos para Jefe de Finanzas (sin línea divisoria aquí)
             if st.session_state.rol == "Jefe de Finanzas":
@@ -965,6 +1022,17 @@ def revisar_solicitudes():
                     mime="application/pdf",
                     key=f"download_resumen_{num_sic}"
                 )
+
+# Función auxiliar para mostrar aprobaciones
+def mostrar_aprobacion(titulo, aprobacion):
+    st.write(f"#### {titulo}")
+    st.write(f"Estado: {aprobacion['estado']}")
+    if aprobacion['comentario']:
+        st.write(f"Comentario: {aprobacion['comentario']}")
+    if 'conflicto_interes' in aprobacion:
+        st.write(f"Conflicto de Interés: {aprobacion['conflicto_interes']['tiene_conflicto']}")
+        if aprobacion['conflicto_interes']['tiene_conflicto'] == "Sí":
+            st.write(f"Detalle: {aprobacion['conflicto_interes']['detalle']}")
 
 def mostrar_resumen_solicitudes():
     st.header("Resumen de Solicitudes")
