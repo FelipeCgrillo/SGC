@@ -1029,10 +1029,21 @@ def mostrar_aprobacion(titulo, aprobacion):
     st.write(f"Estado: {aprobacion['estado']}")
     if aprobacion['comentario']:
         st.write(f"Comentario: {aprobacion['comentario']}")
+    
+    # Destacar visualmente el conflicto de interés
     if 'conflicto_interes' in aprobacion:
-        st.write(f"Conflicto de Interés: {aprobacion['conflicto_interes']['tiene_conflicto']}")
         if aprobacion['conflicto_interes']['tiene_conflicto'] == "Sí":
-            st.write(f"Detalle: {aprobacion['conflicto_interes']['detalle']}")
+            st.error(f"""
+                ⚠️ **ATENCIÓN: Declaró Conflicto de Interés**
+                
+                Detalle: {aprobacion['conflicto_interes']['detalle']}
+            """)
+        else:
+            st.write(f"Conflicto de Interés: No")
+    
+    # Mostrar información de CDP si existe
+    if 'cdp' in aprobacion and aprobacion['cdp']:
+        st.write(f"N° CDP: {aprobacion['cdp']}")
 
 def mostrar_resumen_solicitudes():
     st.header("Resumen de Solicitudes")
